@@ -4,23 +4,28 @@ from google import genai
 from google.genai import types
 import re
 import plotly.express as px
+import os
+from dotenv import load_dotenv
 
-# 1. Setup & Config
-st.set_page_config(page_title="Hypothesis-Hatch", layout="wide")
+# --- 1. SECURE KEY LOADING ---
+# Locally: Looks for a .env file. Cloud: Looks for Streamlit Secrets.
+load_dotenv()
+api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+
+# --- 2. SETUP & CONFIG ---
+st.set_page_config(page_title="Hypothesis-Hatch", layout="wide", page_icon="🧪")
 st.title("🧪 Hypothesis-Hatch")
-st.subheader("Turn raw health data into AI-driven stories")
+st.subheader("Transforming health data into AI-driven stories")
 
-# Sidebar for API Key
-with st.sidebar:
-    st.header("Settings")
-    api_key = st.text_input("AIzaSyDWAQi1RGE-3HJOiGhGx8mc4xfxQ6kn5vk", type="password")
-    st.info("Get your key at aistudio.google.com")
+if not api_key:
+    st.error("⚠️ API Key not detected. Please add GEMINI_API_KEY to your .env file or Streamlit Secrets.")
+    st.stop()
 
-# 2. File Uploader
+# --- 3. FILE UPLOADER ---
 uploaded_file = st.file_uploader("Upload your Health Dataset (CSV)", type=["csv"])
 
-if uploaded_file and api_key:
-    # Initialize the Client once per session
+if uploaded_file:
+    # Initialize the 2026 Stable Client
     client = genai.Client(
         api_key=api_key,
         http_options=types.HttpOptions(api_version="v1beta")
@@ -31,7 +36,7 @@ if uploaded_file and api_key:
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
         
-        # CLEANING: Fix hidden spaces and missing values
+        # Global Fix: Remove hidden spaces and drop empty rows
         df.columns = df.columns.str.strip()
         df = df.dropna()
 
@@ -41,70 +46,64 @@ if uploaded_file and api_key:
 
         st.write("### Data Preview", df.head(5))
         
-        # Prepare data intelligence for the AI
+        # Prepare the statistical DNA for the AI
         stats_summary = f"""
-        CLEANED COLUMNS: {list(df.columns)}
-        NUMERIC STATS: {df.describe().to_string()}
+        COLUMNS: {list(df.columns)}
+        DESCRIPTIVE STATS: {df.describe().to_string()}
         CORRELATIONS: {df.corr(numeric_only=True).to_string()}
         """
 
-        # 3. Trigger analysis
+        # --- 4. THE ANALYSIS ENGINE ---
         if st.button("Generate Hypotheses & Charts"):
-            with st.spinner("Gemini 3 is crunching the numbers..."):
+            with st.spinner("Gemini 3 is analyzing your data..."):
                 try:
                     response = client.models.generate_content(
                         model="gemini-3-flash-preview", 
                         contents=f"""
                         ACT AS A SENIOR DATA SCIENTIST. 
-                        
-                        DATASET INFO:
-                        {stats_summary}
+                        DATASET CONTEXT: {stats_summary}
 
                         TASK:
-                        1. Propose 3 specific hypotheses.
-                        2. For each, provide a brief story and a Plotly Express code block using 'px'.
-                        3. CRITICAL: Use the EXACT column names from the list above.
-                        4. CRITICAL: Do not use trendlines or external libraries like statsmodels.
-                        5. Use variable name 'df' and wrap in ```python [code] ```
+                        1. Propose 3 data-driven hypotheses.
+                        2. For each, provide a Plotly Express code block using 'px'.
+                        3. Use the variable name 'df'. 
+                        4. IMPORTANT: Do not use trendlines or statsmodels.
+                        5. Wrap code strictly in ```python [code] ```
                         """
                     )
                     
-                    # Display the AI's Analysis text
                     st.markdown(response.text)
 
-                    # 4. Visualization Engine
+                    # --- 5. THE VISUALIZATION ENGINE ---
                     code_blocks = re.findall(r'```python\n(.*?)\n```', response.text, re.DOTALL)
                     
                     for i, code in enumerate(code_blocks):
-                        st.write(f"---")
+                        st.divider()
                         st.write(f"### Visualizing Hypothesis {i+1}")
                         try:
-                            # Sandbox for AI code
+                            # Execute the AI-generated code in a safe sandbox
                             local_vars = {"df": df, "px": px, "st": st}
                             exec(code, {}, local_vars)
                             
-                            # Find and render the figure
-                            chart_found = False
+                            # Find any plotly chart object in memory
+                            chart_shown = False
                             for val in local_vars.values():
                                 if "plotly.graph_objs._figure.Figure" in str(type(val)):
                                     st.plotly_chart(val, use_container_width=True)
-                                    chart_found = True
+                                    chart_shown = True
                                     break
                             
-                            if not chart_found:
-                                st.info("Analysis complete, but no chart object was generated.")
+                            if not chart_shown:
+                                st.info("Analysis complete, but no chart object was found.")
 
                         except Exception as e:
-                            st.error(f"Chart Error: {e}")
+                            st.error(f"Chart execution failed: {e}")
                 
                 except Exception as e:
-                    if "429" in str(e):
-                        st.error("Free-tier limit reached. Please wait 60 seconds.")
-                    else:
-                        st.error(f"API Error: {e}")
+                    st.error(f"API Connection Error: {e}")
 
     except Exception as e:
         st.error(f"Processing Error: {e}")
 
-elif not api_key:
-    st.warning("Please enter your API Key in the sidebar.")
+else:
+    st.info("👋 Welcome! Please upload a CSV file to begin the analysis.")
